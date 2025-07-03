@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  vggface-app:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./static/images:/app/static/images
+      - ./models:/app/models
+    environment:
+      - FLASK_ENV=production
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
