@@ -24,6 +24,15 @@ def download_model_from_url(url, local_path):
     Download model from a URL if it doesn't exist locally
     """
     try:
+        # Ensure we have a valid local path
+        if not local_path or local_path.strip() == '':
+            logger.error("Local path is empty or invalid")
+            return False
+            
+        # Convert to absolute path
+        local_path = os.path.abspath(local_path)
+        logger.info(f"Absolute local path: {local_path}")
+        
         if not os.path.exists(local_path):
             logger.info(f"Downloading model from {url}")
             
@@ -32,36 +41,54 @@ def download_model_from_url(url, local_path):
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
             }
             
-            response = requests.get(url, stream=True, headers=headers)
+            response = requests.get(url, stream=True, headers=headers, timeout=30)
             response.raise_for_status()
             
             # Create directory if it doesn't exist
-            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            parent_dir = os.path.dirname(local_path)
+            if parent_dir and not os.path.exists(parent_dir):
+                logger.info(f"Creating directory: {parent_dir}")
+                os.makedirs(parent_dir, exist_ok=True)
             
             # Get total file size for progress tracking
             total_size = int(response.headers.get('content-length', 0))
             downloaded = 0
+            
+            logger.info(f"Starting download, total size: {total_size} bytes")
             
             with open(local_path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
                         downloaded += len(chunk)
-                        if total_size > 0:
+                        if total_size > 0 and downloaded % (1024*1024) == 0:  # Log every MB
                             progress = (downloaded / total_size) * 100
-                            logger.info(f"Download progress: {progress:.1f}%")
+                            logger.info(f"Download progress: {progress:.1f}% ({downloaded}/{total_size} bytes)")
             
-            logger.info("Model downloaded successfully")
+            logger.info(f"Model downloaded successfully to {local_path}")
             return True
+        else:
+            logger.info(f"Model already exists at {local_path}")
+            return True
+            
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Network error downloading model: {str(e)}")
+        return False
     except Exception as e:
         logger.error(f"Failed to download model: {str(e)}")
+        logger.error(f"Local path was: '{local_path}'")
         return False
 
 def load_model_safely():
     """
     Load model with multiple fallback options
     """
-    model_path = 'vggface_model.h5'
+    # Get current working directory
+    current_dir = os.getcwd()
+    model_path = os.path.join(current_dir, 'vggface_model.h5')
+    
+    logger.info(f"Current working directory: {current_dir}")
+    logger.info(f"Model path: {model_path}")
     
     # Option 1: Try to load local file
     if os.path.exists(model_path):
@@ -92,10 +119,10 @@ def load_model_safely():
     
     # Option 3: Check if model exists in different locations
     possible_paths = [
-        './vggface_model.h5',
-        '/app/vggface_model.h5',
-        os.path.join(os.getcwd(), 'vggface_model.h5'),
-        os.path.join(os.path.dirname(__file__), 'vggface_model.h5')
+        os.path.join(current_dir, 'vggface_model.h5'),
+        os.path.join('/app', 'vggface_model.h5'),
+        os.path.join(os.path.dirname(__file__), 'vggface_model.h5'),
+        './vggface_model.h5'
     ]
     
     for path in possible_paths:
