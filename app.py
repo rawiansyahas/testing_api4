@@ -19,22 +19,73 @@ target_img = os.path.join(os.getcwd(), 'static/images')
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def download_from_google_drive(file_id, destination):
+    """
+    Download file from Google Drive using file ID
+    """
+    def get_confirm_token(response):
+        for key, value in response.cookies.items():
+            if key.startswith('download_warning'):
+                return value
+        return None
+
+    def save_response_content(response, destination):
+        CHUNK_SIZE = 32768
+        with open(destination, "wb") as f:
+            for chunk in response.iter_content(CHUNK_SIZE):
+                if chunk:
+                    f.write(chunk)
+
+    URL = "https://docs.google.com/uc?export=download"
+    
+    session = requests.Session()
+    response = session.get(URL, params={'id': file_id}, stream=True)
+    token = get_confirm_token(response)
+
+    if token:
+        params = {'id': file_id, 'confirm': token}
+        response = session.get(URL, params=params, stream=True)
+
+    save_response_content(response, destination)
+
+def extract_file_id_from_drive_url(url):
+    """
+    Extract file ID from Google Drive URL
+    """
+    if 'drive.google.com' in url:
+        if '/file/d/' in url:
+            # Extract from URL like: https://drive.google.com/file/d/FILE_ID/view
+            return url.split('/file/d/')[1].split('/')[0]
+        elif 'id=' in url:
+            # Extract from URL like: https://drive.google.com/uc?id=FILE_ID
+            return url.split('id=')[1].split('&')[0]
+    return None
+
 def download_model_from_url(url, local_path):
     """
-    Download model from a URL if it doesn't exist locally
+    Download model from a URL (supports Google Drive)
     """
     try:
         if not os.path.exists(local_path):
             logger.info(f"Downloading model from {url}")
-            response = requests.get(url, stream=True)
-            response.raise_for_status()
             
             # Create directory if it doesn't exist
             os.makedirs(os.path.dirname(local_path), exist_ok=True)
             
-            with open(local_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
+            # Check if it's a Google Drive URL
+            file_id = extract_file_id_from_drive_url(url)
+            if file_id:
+                logger.info(f"Detected Google Drive URL, using file ID: {file_id}")
+                download_from_google_drive(file_id, local_path)
+            else:
+                # Regular URL download
+                response = requests.get(url, stream=True)
+                response.raise_for_status()
+                
+                with open(local_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+            
             logger.info("Model downloaded successfully")
         return True
     except Exception as e:
@@ -45,6 +96,7 @@ def load_model_safely():
     """
     Load model with multiple fallback options
     """
+    
     model_path = 'vggface_model.h5'
     
     # Option 1: Try to load local file
@@ -57,16 +109,20 @@ def load_model_safely():
         except Exception as e:
             logger.error(f"Failed to load local model: {str(e)}")
     
-    # Option 2: Try to download from cloud storage (replace with your URL)
-    model_url = os.environ.get('MODEL_URL', None)  # Set this in Railway environment variables
-    if model_url:
-        if download_model_from_url(model_url, model_path):
-            try:
-                model = load_model(model_path)
-                logger.info("Model loaded successfully from cloud")
-                return model
-            except Exception as e:
-                logger.error(f"Failed to load downloaded model: {str(e)}")
+    # Option 2: Try to download from Google Drive
+    # Your file ID from the URL: https://drive.google.com/file/d/1JQeKTM59S_OaFi-IvU5d0PwDywiD6V77/view
+    google_drive_file_id = "1JQeKTM59S_OaFi-IvU5d0PwDywiD6V77"
+    
+    # You can also set this via environment variable
+    model_url = os.environ.get('MODEL_URL', f'https://drive.google.com/uc?export=download&id=1JQeKTM59S_OaFi-IvU5d0PwDywiD6V77')
+    
+    if download_model_from_url(model_url, model_path):
+        try:
+            model = load_model(model_path)
+            logger.info("Model loaded successfully from Google Drive")
+            return model
+        except Exception as e:
+            logger.error(f"Failed to load downloaded model: {str(e)}")
     
     # Option 3: Check if model exists in different locations
     possible_paths = [
