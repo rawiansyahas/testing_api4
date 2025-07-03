@@ -79,6 +79,52 @@ def download_model_from_url(url, local_path):
         logger.error(f"Local path was: '{local_path}'")
         return False
 
+def load_model_with_compatibility(model_path):
+    """
+    Load model with compatibility fixes for different Keras versions
+    """
+    try:
+        # Try loading normally first
+        model = load_model(model_path)
+        return model
+    except Exception as e:
+        if "batch_shape" in str(e) or "Unrecognized keyword arguments" in str(e):
+            logger.info("Attempting to load model with compatibility mode for batch_shape issue")
+            try:
+                # Try loading with compile=False to avoid some compatibility issues
+                model = load_model(model_path, compile=False)
+                logger.info("Model loaded successfully with compile=False")
+                return model
+            except Exception as e2:
+                logger.error(f"Failed to load with compile=False: {str(e2)}")
+                
+                # Try using custom_objects to handle the InputLayer issue
+                try:
+                    from tensorflow.keras.layers import InputLayer
+                    
+                    # Create a custom InputLayer class that handles batch_shape
+                    class CompatibleInputLayer(InputLayer):
+                        def __init__(self, batch_shape=None, input_shape=None, **kwargs):
+                            if batch_shape is not None and input_shape is None:
+                                # Convert batch_shape to input_shape
+                                input_shape = batch_shape[1:]
+                            super().__init__(input_shape=input_shape, **kwargs)
+                    
+                    custom_objects = {
+                        'InputLayer': CompatibleInputLayer
+                    }
+                    
+                    model = load_model(model_path, custom_objects=custom_objects, compile=False)
+                    logger.info("Model loaded successfully with custom InputLayer")
+                    return model
+                    
+                except Exception as e3:
+                    logger.error(f"Failed to load with custom objects: {str(e3)}")
+                    return None
+        else:
+            logger.error(f"Model loading failed with unknown error: {str(e)}")
+            return None
+
 def load_model_safely():
     """
     Load model with multiple fallback options
@@ -94,9 +140,10 @@ def load_model_safely():
     if os.path.exists(model_path):
         try:
             logger.info("Loading model from local file")
-            model = load_model(model_path)
-            logger.info("Model loaded successfully from local file")
-            return model
+            model = load_model_with_compatibility(model_path)
+            if model is not None:
+                logger.info("Model loaded successfully from local file")
+                return model
         except Exception as e:
             logger.error(f"Failed to load local model: {str(e)}")
     
@@ -111,9 +158,10 @@ def load_model_safely():
         logger.info(f"Attempting to download model from: {model_url}")
         if download_model_from_url(model_url, model_path):
             try:
-                model = load_model(model_path)
-                logger.info("Model loaded successfully from Hugging Face")
-                return model
+                model = load_model_with_compatibility(model_path)
+                if model is not None:
+                    logger.info("Model loaded successfully from Hugging Face")
+                    return model
             except Exception as e:
                 logger.error(f"Failed to load downloaded model: {str(e)}")
     
@@ -129,9 +177,10 @@ def load_model_safely():
         if os.path.exists(path):
             try:
                 logger.info(f"Trying to load model from: {path}")
-                model = load_model(path)
-                logger.info(f"Model loaded successfully from: {path}")
-                return model
+                model = load_model_with_compatibility(path)
+                if model is not None:
+                    logger.info(f"Model loaded successfully from: {path}")
+                    return model
             except Exception as e:
                 logger.error(f"Failed to load model from {path}: {str(e)}")
                 continue
