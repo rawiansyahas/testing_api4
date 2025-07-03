@@ -114,7 +114,7 @@ def load_model_safely():
     google_drive_file_id = "1JQeKTM59S_OaFi-IvU5d0PwDywiD6V77"
     
     # You can also set this via environment variable
-    model_url = os.environ.get('MODEL_URL', f'https://drive.google.com/uc?export=download&id=1JQeKTM59S_OaFi-IvU5d0PwDywiD6V77')
+    model_url = os.environ.get('MODEL_URL', f'https://drive.google.com/file/d/{google_drive_file_id}/view')
     
     if download_model_from_url(model_url, model_path):
         try:
