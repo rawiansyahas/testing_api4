@@ -362,4 +362,5 @@ if __name__ == '__main__':
     except Exception as e:
         logger.error(f"MTCNN initialization failed: {str(e)}")
     
-    app.run(debug=True, use_reloader=False, port=8000)
+    port = int(os.environ.get("PORT", 8000))
+    app.run(debug=False, host='0.0.0.0', port=port)
